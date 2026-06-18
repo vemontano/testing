@@ -1,0 +1,15 @@
+# Entorno virtual de Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Base de datos local (SQLite)
+local.db
+sistema.db
+
+# Archivos de configuración y claves
+claves.env
+.env
+.env.local
