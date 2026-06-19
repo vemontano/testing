@@ -8,8 +8,13 @@ def limpiar_pantalla():
 def obtener_fecha_actual():
     return datetime.now().strftime("%Y-%m-%d %H:%M")
 
+import sync_db
+
 def obtener_inventario_bd():
-    conexion = sqlite3.connect("sistema.db")
+    # Nos aseguramos de que las tablas existan
+    sync_db.inicializar_bd_local()
+    
+    conexion = sqlite3.connect("local.db")
     cursor = conexion.cursor()
     cursor.execute("SELECT id, nombre, cantidad, precio FROM inventario")
     productos = cursor.fetchall()
@@ -57,12 +62,23 @@ def generar_factura():
             pass
 
     # PROCESAR TRANSACCIÓN EN LA BD
-    conexion = sqlite3.connect("sistema.db")
+    import json
+    conexion = sqlite3.connect("local.db")
     cursor = conexion.cursor()
     fecha = obtener_fecha_actual()
     
+    subtotal = sum(item['cantidad'] * item['precio'] for item in carrito)
+    total_factura = subtotal * 1.16
+    detalles_txt = json.dumps(carrito)
+    
+    # 1. Guardar en cola de facturas pendientes localmente
+    cursor.execute("""
+        INSERT INTO facturas_pendientes (cliente, rif_cedula, fecha, monto_total, detalles_json)
+        VALUES (?, ?, ?, ?, ?)
+    """, (cliente, "N/A", fecha, total_factura, detalles_txt))
+    
+    # 2. Descontar del stock local
     for item in carrito:
-        # Descontamos directamente en la tabla SQL
         cursor.execute("""
             UPDATE inventario 
             SET cantidad = cantidad - ?, fecha_modificacion = ? 
@@ -71,6 +87,9 @@ def generar_factura():
         
     conexion.commit()
     conexion.close()
+    
+    # 3. Sincronizar automáticamente en segundo plano si hay internet
+    sync_db.sincronizar_y_descargar(silencioso=True)
     
     # Imprimir Factura en pantalla
     limpiar_pantalla()
@@ -90,6 +109,9 @@ def generar_factura():
     input("\nFactura procesada. Enter para volver...")
 
 if __name__ == "__main__":
+    # Intentar sincronizar al arrancar el programa
+    sync_db.sincronizar_y_descargar(silencioso=True)
+    
     while True:
         limpiar_pantalla()
         print("=== SISTEMA DE FACTURACIÓN ===")

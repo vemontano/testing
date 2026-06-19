@@ -8,11 +8,16 @@ def limpiar_pantalla():
 def obtener_fecha_actual():
     return datetime.now().strftime("%Y-%m-%d %H:%M")
 
+import sync_db
+
 def mostrar_inventario():
     limpiar_pantalla()
     print("--- MÓDULO DE INVENTARIO INDEPENDIENTE ---")
     
-    conexion = sqlite3.connect("sistema.db")
+    # Intentar sincronizar con Supabase para mostrar el stock actualizado
+    sync_db.sincronizar_y_descargar(silencioso=True)
+    
+    conexion = sqlite3.connect("local.db")
     cursor = conexion.cursor()
     cursor.execute("SELECT id, nombre, cantidad, precio, fecha_modificacion FROM inventario")
     productos = cursor.fetchall()
@@ -38,7 +43,7 @@ def agregar_producto():
         cantidad = int(input("Cantidad: "))
         precio = float(input("Precio: "))
         
-        conexion = sqlite3.connect("sistema.db")
+        conexion = sqlite3.connect("local.db")
         cursor = conexion.cursor()
         
         cursor.execute("INSERT INTO inventario VALUES (?, ?, ?, ?, ?)", 
@@ -53,6 +58,9 @@ def agregar_producto():
     input("\nPresione Enter para continuar...")
 
 if __name__ == "__main__":
+    # Asegurar la creación de tablas locales en local.db
+    sync_db.inicializar_bd_local()
+    
     while True:
         limpiar_pantalla()
         print("=== CONTROL DE INVENTARIO ===")

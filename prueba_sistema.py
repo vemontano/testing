@@ -6,7 +6,12 @@ import socket
 from datetime import datetime
 
 # Función para cargar variables desde claves.env de forma segura
-def cargar_claves(ruta="claves.env"):
+def cargar_claves(ruta=None):
+    if ruta is None:
+        # Busca el archivo claves.env en el mismo directorio donde está este script
+        directorio_script = os.path.dirname(os.path.abspath(__file__))
+        ruta = os.path.join(directorio_script, "claves.env")
+        
     if os.path.exists(ruta):
         with open(ruta, "r") as f:
             for linea in f:
@@ -19,14 +24,14 @@ def cargar_claves(ruta="claves.env"):
 cargar_claves()
 
 # =========================================================================
-# CONFIGURACIÓN DE CREDENCIALES (Cargadas de forma segura)
+# CONFIGURACIÓN DE CREDENCIALES (Cargadas de forma segura con respaldos por defecto)
 # =========================================================================
 DB_HOST = os.environ.get("DB_HOST", "aws-0-us-east-2.pooler.supabase.com")
-DB_NAME = os.environ.get("DB_NAME", "ppp")
-DB_USER = os.environ.get("DB_USER", "postgres")
-DB_PASS = os.environ.get("DB_PASS", "")
+DB_NAME = os.environ.get("DB_NAME", "postgres")
+DB_USER = os.environ.get("DB_USER", "postgres.qatcfaqnqmofeovblkar")
+DB_PASS = os.environ.get("DB_PASS", "auPyS15OfpBTHKKi")
 DB_PORT = os.environ.get("DB_PORT", "6543")
-DB_PROJECT_ID = os.environ.get("DB_PROJECT_ID", "")
+DB_PROJECT_ID = os.environ.get("DB_PROJECT_ID", "qatcfaqnqmofeovblkar")
 
 def limpiar_pantalla():
     os.system('cls' if os.name == 'nt' else 'clear')
@@ -52,8 +57,9 @@ def obtener_conexion_nube():
             "password": DB_PASS,
             "port": DB_PORT,
             "connect_timeout": 5,
-            "options": f"-c project={DB_PROJECT_ID}" if DB_PROJECT_ID else ""
         }
+        if DB_PROJECT_ID:
+            argumentos_conexion["options"] = f"-c project={DB_PROJECT_ID}"
         
         conexion = psycopg2.connect(**argumentos_conexion)
         return conexion
@@ -93,11 +99,15 @@ def sincronizar_y_descargar():
             for fac in facturas_offline:
                 id_local, cliente, rif, fecha, total, detalles_json = fac
                 
+                # Truncamos los valores para cumplir con los límites varchar(150) y varchar(50) de Supabase
+                cliente_seguro = cliente[:150] if cliente else "Sin Nombre"
+                rif_seguro = rif[:50] if rif else "N/A"
+                
                 # Insertar en Supabase
                 cursor_nube.execute("""
                     INSERT INTO facturas (cliente, rif_cedula, fecha, monto_total, detalles_json)
                     VALUES (%s, %s, %s, %s, %s)
-                """, (cliente, rif, fecha, total, detalles_json))
+                """, (cliente_seguro, rif_seguro, fecha, total, detalles_json))
                 
                 # Eliminar de la cola local
                 cursor_local.execute("DELETE FROM facturas_pendientes WHERE id = ?", (id_local,))
@@ -107,7 +117,13 @@ def sincronizar_y_descargar():
 
         # 2. Descargar el inventario fresco de Supabase para actualizar la PC local
         cursor_nube.execute("SELECT id, nombre, cantidad, precio, to_char(fecha_modificacion, 'YYYY-MM-DD HH24:MI') FROM inventario")
-        productos_nube = cursor_nube.fetchall()
+        productos_nube_crudos = cursor_nube.fetchall()
+
+        # Convertimos el precio (Decimal) a float para que sqlite3 pueda guardarlo correctamente
+        productos_nube = [
+            (p[0], p[1], p[2], float(p[3]) if p[3] is not None else 0.0, p[4])
+            for p in productos_nube_crudos
+        ]
 
         cursor_local.execute("DELETE FROM inventario")
         cursor_local.executemany("INSERT INTO inventario VALUES (?, ?, ?, ?, ?)", productos_nube)
